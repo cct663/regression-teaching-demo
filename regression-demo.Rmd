@@ -1,0 +1,358 @@
+---
+title: "Regression in ecology"
+author: "Conor Taff"
+date: "Last Updated: `r format(Sys.time(), '%B %d %Y at %H:%M')`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cerulean
+    code_folding: hide
+---
+
+```{r r-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Regression in ecology tutorial
+
+This tutorial accompanies the lecture material from an introduction to regression at Bates College January 24th, 2022. This document is not meant to cover all the material from the lecture, but it does include code to reproduce all the figures and analyses that we went over. Links to the full code repository with data, the slides, and the worksheet from class are included at the end of the document.
+
+```{r env-setup, warning = FALSE, message = FALSE}
+# I'm loading packages to be used later
+# If any of these are not installed in your R environment, you'll need to first install them
+# using install.packages("package.name")
+  library(tidyverse) 
+  library(gganimate)
+  library(ggpubr)
+  library(rethinking)
+
+# I'm also setting up a custom theme for ggplot to make the later figures look the way I want
+  theme_brt <- function(){
+  theme_bw() %+replace% # replace elements I want to change
+    
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16)
+  )
+}
+```
+
+## Simple example
+
+We introduced regression with a simple simulated example. In this case we are imagining a predictor and response variable that are positively correlated with each other. This could be any data at all, but in class I suggested that we think of this as fish age (predictor/independent variable) and fish length (response/dependent variable), in order to stick with our fish theme. To keep things simple, I'm simulating these data using a small function below that generates a data frame with the columns we need. 
+
+By modifying the code in the chunk below, you can easily change the strength of correlation, amount of variation, range of data, and sample size. 
+
+```{r sim-fxn, message = FALSE, warning = FALSE}
+# This simple function simulates correlated data for two variables. 
+# The arguments are: 
+  #n = sample size 
+  #cor_xy = correlation 
+  #spread = amount of noise
+  #seed and seed2 = start of random seed, included so that the results are identical each time
+  #min and max = range of x values to sample over
+
+    sim_dat <- function(n = 5, cor_xy = 0.4, spread = 5, seed = 7, seed2 = 18, min = 20, max = 100){
+      set.seed(seed = seed)
+      x <- runif(n, min = min, max = max)
+      set.seed(seed = seed2)
+      y <- x*cor_xy + runif(n, spread, spread*2)
+      df <- data.frame(x = x, y = y, resid = residuals(lm(y ~ x)))
+    }
+```
+
+### Static plots
+
+Now I'll use this simulation function to make a simple simulated dataset and plot it in stages. These plots were used in class to illustrate the components of a linear regression and how they correspond to the linear regression equation. The color coding in these plots matches the linear regression equation from the slides.
+
+```{r first-example, message = FALSE, warning = FALSE, fig.height = 3, fig.width = 9}
+# simulate a dataset with 20 fish measures
+  dfx <- sim_dat(n = 20, cor_xy = 0.3, spread = 20, min = 0)
+
+# run a simple linear regression model in R using function 'lm' and then make a second
+  # dataframe that stores the y-intercept from the regression. I'm just doing this now so that
+  # I can add a point illustrating the intercept.
+    m <- lm(y ~ x, dfx)
+    yint <- data.frame(x1 = 0, y1 = coef(m)[1])
+    
+# Make the plots used in class. These are basically all variations on the same plot, but I'm building
+    # them up piece by piece to make it easier to illustrate on the slides in class
+    
+  # first plot = just points  
+      p1 <- ggplot(dfx, mapping = aes(x = x, y = y)) +
+        geom_point() +
+        theme_brt() +
+        xlab("Fish age (predictor/independent)") + theme(axis.title.x = element_text(color = "blue")) +
+        ylab("Fish length (response/dependent)") + theme(axis.title.y = element_text(color = "orange")) +
+        coord_cartesian(xlim = c(0, 100), ylim = c(0, 75)) 
+      #ggsave("p1.png", p1, height = 4, width = 5.5, units = "in", device = "png")
+    
+  # second plot = add regression line and intercept    
+      p2 <- p1 +
+        geom_point() +
+        geom_smooth(method = "lm", se = FALSE, color = "purple", fullrange = TRUE) +
+        guides(color = "none") +
+        geom_point(data = yint, mapping = aes(x = x1, y = y1), color = "red", size = 6, shape = 18)
+      #ggsave("p2.png", p2, height = 4, width = 5.5, units = "in", device = "png")
+      
+  # third plot = add error residuals 
+      p3 <- p1 +
+        geom_point() +
+        geom_smooth(method = "lm", se = FALSE, color = "purple") +
+        geom_segment(mapping = aes(x = x, xend = x, y = y, yend = y - resid), color = "green") +
+        guides(color = "none") +
+        geom_point(data = yint, mapping = aes(x = x1, y = y1), color = "red", size = 6, shape = 18)
+      #ggsave("p3.png", p3, height = 4, width = 5.5, units = "in", device = "png")
+```
+
+First, a plot of the simulated data just showing the points.
+
+```{r p1-plot, message = FALSE, warning = FALSE, fig.height = 5, fig.width = 6}
+p1 # See code chunk above for plotting commands
+```
+
+Next, we add in the simple linear regression line and a point to show the intercept. 
+
+```{r p2-plot, message = FALSE, warning = FALSE, fig.height = 5, fig.width = 6}
+p2 # See code chunk above for plotting commands
+```
+
+Finally, we add in the residual errors for each point.
+
+```{r p3-plot, message = FALSE, warning = FALSE, fig.height = 5, fig.width = 6}
+p3 # See code chunk above for plotting commands
+```
+
+### Animated plot
+
+In class I also showed an animated version of a similar plot with points added sequentially to show how the regression line changes with each additional point. The code chunk below recreates that plot as a gif.
+
+```{r anim-plot, warning = FALSE, message = FALSE, fig.height = 5, fig.width = 6}
+# This is using the same data simulation function as above, but in a loop so that a separate dataset
+# is created for every sample size between 2 and 75
+     for(i in 2:75){
+          df <- sim_dat(n = i, cor_xy = 0.25, spread = 15)
+          df$n <- i
+            df$color <- "b"
+              for(k in 1:nrow(df)){
+                if(df$resid[k] > 0){df$color[k] <- "a"}
+              }
+          if(i == 2){df2 <- df}
+          if(i > 2){df2 <- rbind(df, df2)}
+        }
+
+# Create the animated plot. transition_states and enter_fade functions are setting the animation
+    p4 <- ggplot(df2, mapping = aes(x = x, y = y)) +
+      geom_point(mapping = aes(color = color)) +
+      geom_smooth(method = "lm", se = FALSE, color = "gray50", fullrange = TRUE) +
+      geom_segment(mapping = aes(x = x, xend = x, y = y, yend = y - resid, color = color)) +
+      guides(color = "none") +
+      theme_brt() +
+      transition_states(n, transition_length = 1, state_length = 3) +
+      enter_fade() +
+      xlab("Predictor variable (independent)") +
+      ylab("Response variable (dependent)")
+
+# render the animation
+  a <- animate(p4, renderer = gifski_renderer(), duration = 50,
+               height = 5, width = 6, units = "in", res = 300)
+
+# save the animation to a file
+  #anim_save("regression_animation.gif", a) # remove first hash to run
+
+# create a static version of the same plot
+  p4_static <- ggplot(df, mapping = aes(x = x, y = y)) +
+      geom_point(mapping = aes(color = color)) +
+      geom_smooth(method = "lm", se = FALSE, color = "black") +
+      geom_segment(mapping = aes(x = x, xend = x, y = y, yend = y - resid, color = color)) +
+      guides(color = "none") +
+      theme_brt() +
+      xlab("Predictor variable (independent)") +
+      ylab("Response variable (dependent)")
+
+# print the animation to the viewer
+  a
+```
+
+## Maine lakes data
+
+Let's try looking at some real data. Here we will load data on the number of freshwater fish species present in each of Maine's 6,000 lakes. I scraped this data from a map produced by www.gulfofmaine.org and it is based on lake surveys, but I haven't verified the monitoring protocol. In any case it will work well as an example dataset. The cleaned up data is available in the GitHub repository (link at end).
+
+### Fish counts
+
+The first plot shows a histogram of the number of fish found in Maine lakes. The dataset includes about 2,000 lakes (quite a discrepancy from the 6,000 lakes that are supposedly found in Maine!).
+
+In order to run the code below here using the fish data, you will need to retrieve the csv file from GitHub. The link to the repository is included at the end of this document.
+
+```{r load-lakes, message = FALSE, warning = FALSE, fig.height = 4, fig.width = 6}
+# load the lake fish data
+  fish <- read.delim("maine_fish.txt")
+# I'm filtering out some records of tiny lakes for simplicity
+  fish <- fish %>%
+    filter(acres > 2, depth_max > 2)
+
+# Basic histogram of number of fish per lake
+  fh <- ggplot(fish, mapping = aes(x = fish)) +
+    geom_histogram(fill = "orange", binwidth = 1, color = "gray40") +
+    theme_brt() +
+    xlab("Number of fish species") +
+    ylab("Number of lakes")
+  #ggsave("fish_hist.png", fh, height = 4, width = 6, units = "in", device = "png")
+  fh
+```
+
+### Lake area linear regression
+
+First, we looked a plot of lake area (on the log base 2 scale) by fish diversity. We used a log transformation because the relationship is not linear on the measurement scale. Log 2 is convenient here because a one unit increase in lake area represents a doubling in lake size. The slides included two versions of this plot, with the second version having lake area centered to make the intercept easier to interpret.
+
+```{r plot-area, warning = FALSE, message = FALSE, fig.height = 3, fig.width = 8}
+# first I'm making a few new columns with area and depth log transformed and then centered
+  fish$log2_acres <- log(fish$acres, 2) # log transform base 2, 1-unit increase is a doubling in lake size
+  fish$log2_acres_c <- fish$log2_acres - mean(fish$log2_acres) # centers the log transformed acres
+  
+  fish$log2_depth <- log(fish$depth_max, 2)
+  fish$log2_depth_c <- fish$log2_depth - mean(fish$log2_depth)
+
+# Plot fish by area first with log2 area then with centered log2 area
+  pf1 <- ggplot(fish, mapping = aes(x = log2_acres, y = fish)) +
+    geom_point(alpha = 0.5, color = "slateblue") +
+    geom_smooth(method = "lm", se = FALSE, color = "black") +
+    theme_brt() +
+    xlab("Acres (log base 2)") +
+    ylab("Fish species")
+  #ggsave("fish_area.png", pf1, device = "png", width = 4, height = 3, units = "in")
+  
+  pf1b <- ggplot(fish, mapping = aes(x = log2_acres_c, y = fish)) +
+    geom_point(alpha = 0.5, color = "slateblue") +
+    geom_smooth(method = "lm", se = FALSE, color = "black") +
+    theme_brt() +
+    xlab("Centered acres (log base 2)") +
+    ylab("Fish species") +
+    geom_vline(xintercept = 0, color = "red", linetype = "dashed")
+  #ggsave("fish_area_c.png", pf1b, device = "png", width = 4, height = 3, units = "in")  
+  
+  ggarrange(pf1, pf1b, nrow = 1)
+```
+
+Next, we fit a simple linear regression corresponding to each of the plots above and examined the summary of the fit model. 
+
+```{r lm-area, warning = FALSE, message = FALSE, echo = TRUE}
+# simple linear model for lake area
+  mf <- lm(fish ~ log2_acres, data = fish)
+# summary of estimates for this model
+  round(precis(mf), 2) # a more complete summary can be produced with summary(mf)
+
+# simple linear model for centered lake area
+  mfs <- lm(fish ~ log2_acres_c, data = fish)
+# summary of estimates for this model
+  round(precis(mfs), 2) # a more complete summary can be produced with summary(mfs)
+```
+
+### Fish by lake depth
+
+Repeating the figures for lake area above but this time using lake depth.
+
+```{r plot-depth, warning = FALSE, message = FALSE, fig.height = 3, fig.width = 8}
+# Plot fish by depth first with log2 area then with centered log2 depth
+  pf2 <- ggplot(fish, mapping = aes(x = log2_depth, y = fish)) +
+    geom_point(alpha = 0.5, color = "slateblue") +
+    geom_smooth(method = "lm", se = FALSE, color = "black") +
+    theme_brt() +
+    xlab("Max depth in feet (log base 2)") +
+    ylab("Fish species") 
+  #ggsave("fish_depth.png", pf2, device = "png", width = 4, height = 3, units = "in")
+  
+  pf2b <- ggplot(fish, mapping = aes(x = log2_depth_c, y = fish)) +
+    geom_point(alpha = 0.5, color = "slateblue") +
+    geom_smooth(method = "lm", se = FALSE, color = "black") +
+    theme_brt() +
+    xlab("Centered max depth (log base 2)") +
+    ylab("Fish species") +
+    geom_vline(xintercept = 0, color = "red", linetype = "dashed")
+  #ggsave("fish_depth_c.png", pf2b, device = "png", width = 4, height = 3, units = "in")
+  
+  ggarrange(pf2, pf2b, nrow = 1)
+```
+
+And then repeating the simple linear models to correspond with each lake depth figure.
+
+```{r lm-depth, warning = FALSE, message = FALSE, echo = TRUE}
+# simple linear model for lake depth
+  md <- lm(fish ~ log2_depth, data = fish)
+# summary of estimates for this model
+  round(precis(md), 2) # a more complete summary can be produced with summary(md)
+
+# simple linear model for centered lake depth
+  mds <- lm(fish ~ log2_depth_c, data = fish)
+# summary of estimates for this model
+  round(precis(mds), 2) # a more complete summary can be produced with summary(mds)
+```
+
+### Multiple linear regression
+
+We talked about how simple linear regression can be expanded into multiple linear regression with more than one predictor. Both lake area and lake depth are positively associated with fish diversity, so we fit a multiple linear regression with both measures as predictors.
+
+```{r}
+# multiple linear regression for area and depth
+  mm <- lm(fish ~ log2_acres_c + log2_depth_c, data = fish)
+# print output for this model
+  round(precis(mm), 2) # a complete summary can be produced with summary(mm)
+```
+
+### Area by depth
+
+Once we know lake area, adding lake depth in a multiple regression doesn't tell us much more information about fish diversity. This is probably because lake area and depth are themselves pretty closely correlated, such that the same information about fish diversity is captured by both predictors.
+
+```{r area-depth, warning = FALSE, message = FALSE, fig.height = 3, fig.width = 4}
+# Plot lake area by depth
+  pf3 <- ggplot(fish, mapping = aes(x = log2_acres_c, y = log2_depth_c)) +
+    geom_point(alpha = 0.5, color = "slateblue") +
+    geom_smooth(method = "lm", se = FALSE, color = "black") +
+    theme_brt() +
+    xlab("Centered acres (log base 2)") +
+    ylab("Centered depth \n (log base 2)")
+  #ggsave("depth_size.png", pf3, device = "png", width = 4, height = 3, units = "in")
+  pf3
+```
+
+## Assumptions
+
+We didn't have time in class to go through the assumptions that should be checked for linear models, but I briefly showed a plot of Anscombe's quartet to illustrate the importance of linearity and of plotting raw data! Here is the code for that plot.
+
+For all the models plotted above, we should check the assumptions listed in the lecture before making conclusions.
+
+```{r anscombe-q, warning = FALSE, message = FALSE, fig.height = 4, fig.width = 4.5}
+# load data for anscombe's quartet
+  data(anscombe)
+
+# pivot the data longer for plotting
+  a <- anscombe %>%
+    pivot_longer(everything(),
+                 names_to = c(".value", "set"),
+                 names_pattern = "(.)(.)") %>%
+    arrange(set)
+  
+# plot anscombe quartet
+  aq <- ggplot(a, mapping = aes(x = x, y = y)) +
+    geom_smooth(method = "lm", se = FALSE, fullrange = TRUE, color = "black") +
+    geom_point(color = "slateblue") +
+    theme_brt() +
+    facet_wrap(~ set, nrow = 2) +
+    xlab("Predictor") +
+    ylab("Response") +
+    ggtitle("Anscombe's Quartet")
+  #ggsave("anscombe.png", aq, width = 4.5, height = 4, device = "png", units = "in")
+  
+  aq
+```
+
+## Resources
+
+- The slides from class are available here:
+
+- The source code for this tutorial is here:
+
+- The worksheet from class is here: 
