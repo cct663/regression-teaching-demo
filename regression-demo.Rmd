@@ -26,6 +26,8 @@ This tutorial accompanies the lecture material from an introduction to regressio
   library(gganimate)
   library(ggpubr)
   library(rethinking)
+  library(knitr)
+  library(kableExtra)
 
 # I'm also setting up a custom theme for ggplot to make the later figures look the way I want
   theme_brt <- function(){
@@ -318,7 +320,11 @@ Once we know lake area, adding lake depth in a multiple regression doesn't tell 
   pf3
 ```
 
-## Assumptions
+## Miscellanea
+
+A few small chunks from the worksheet or lecture that don't fit in above.
+
+### Assumptions
 
 We didn't have time in class to go through the assumptions that should be checked for linear models, but I briefly showed a plot of Anscombe's quartet to illustrate the importance of linearity and of plotting raw data! Here is the code for that plot.
 
@@ -349,10 +355,91 @@ For all the models plotted above, we should check the assumptions listed in the 
   aq
 ```
 
+### OLS by hand    
+
+It's pretty easy to calculate ordinary least squares by hand for a small dataset. In practice you will always use software like R to do this. This example was on the worksheet handed out in class.
+
+```{r ols-calc, warning = FALSE, message = FALSE}
+## example data
+  ols <- data.frame(x = c(2, 3, 5, 7, 9), y = c(4, 5, 10, 10, 15))
+
+# plot the data
+  ols_p <- ggplot(ols, mapping = aes(x = x, y = y)) +
+    geom_point() +
+    theme_brt() +
+    coord_cartesian(xlim = c(0, 9.5), ylim = c(0, 15.5))
+  
+  ols_p
+```
+
+```{r ols-table, warning = FALSE, message = FALSE}
+# print a table of the example data
+  knitr::kable(ols) %>%
+    kable_styling(full_width = F)
+```
+
+
+The worksheet showed how to calculate this entirely by hand, but we can also use R to perform the calculations directly on the data in the table. Running a linear regression in r using `lm(y ~ x, data = ols)` will confirm that the regression estimates are the same.
+
+```{r ols-calc2}
+# using the table above and the formulas from the worksheet
+
+# formula for regression coefficient
+  B1 <- (nrow(ols)*sum((ols$x*ols$y)) - sum(ols$x)*sum(ols$y)) /
+        (nrow(ols)*sum(ols$x^2) - sum(ols$x)^2)
+
+  B0 <- (sum(ols$y) - B1*sum(ols$x)) / nrow(ols)
+  
+  B1
+  B0
+
+```
+
+
+### Worksheet thought example
+
+Here is the data and plots for the worksheet example where you counted fish in the cartoon lakes.
+
+```{r worksheet-ex, message = FALSE, warning = FALSE}
+# making the data frame
+  wdf <- data.frame(lake = c("a", "b", "c"), 
+                    area = c(2, 4, 8),
+                    fish = c(2, 6, 6))
+
+# making the first plot
+  pwk <- ggplot(wdf[1:2, ], mapping = aes(x = area, y = fish)) +
+    geom_point(color = "slateblue", size = 2) +
+    theme_brt() +
+    xlab("Lake area") +
+    ylab("Fish species") +
+    coord_cartesian(xlim = c(0, 8.5), ylim = c(0, 8.5))
+  #ggsave("pwk.png", pwk, height = 4, width = 5.5, units = "in", device = "png")
+  pwk
+  
+# making second plot
+  pwk2 <- pwk +
+    geom_point(data = wdf[3, ], color = "orange", size = 2)
+  #ggsave("pwk2.png", pwk2, height = 4, width = 5.5, units = "in", device = "png")
+  pwk2
+  
+# making third plot
+  pwk3 <- pwk +
+    geom_smooth(data = wdf[1:2, ], method = "lm", se = FALSE, 
+                color = "slateblue", fullrange = TRUE, alpha = 0.4) +
+    geom_smooth(data = wdf, method = "lm", se = FALSE,
+                color = "orange", fullrange = TRUE, alpha = 0.4) +
+    geom_point(data = wdf[3, ], color = "orange", size = 2) +
+    geom_point(data = wdf[1:2, ], fill = "slateblue", color = "orange", shape = 21)
+  #ggsave("pwk3.png", pwk3, height = 4, width = 5.5, units = "in", device = "png")
+  pwk3
+
+```
+
+
 ## Resources
 
-- The slides from class are available here:
+- The slides from class are available here: https://bit.ly/3iAHBMC
 
-- The source code for this tutorial is here:
+- The source code for this material is here: https://github.com/cct663/regression-teaching-demo
 
-- The worksheet from class is here: 
+- The worksheet from class is here: https://bit.ly/3iBQ9D2
